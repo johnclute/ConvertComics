@@ -1,0 +1,15 @@
+#!/bin/bash
+type=$1
+if [ $# -eq 0 ]; then
+  type="jpg"
+fi
+for file in *.cbz
+do
+  fl=${file%.cbz}-cover.${type}
+  if [ -z $fl ]; then
+    echo "Converting $file"
+    ebook-convert $file ${file%.cbz}.epub --cover $fl --no-process --dont-normalize --output-profile nook
+  else
+    ebook-convert $file ${file%.cbz}.epub --no-process --dont-normalize --output-profile nook
+fi
+done

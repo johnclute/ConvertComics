@@ -1,0 +1,16 @@
+#!/bin/bash -v
+smplcnv1
+if [ ! -d clnfls ]; then
+  mkdir clnfls
+fi
+cp *.zip clnfls/
+ls
+cd clnfls/
+trmcmx1
+ls
+rm *.zip
+zipconvdir 
+cnvzipcbz 
+cbztoepub 
+
+

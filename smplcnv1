@@ -1,0 +1,308 @@
+#!/bin/bash 
+echo $0 $1
+if [[ $1 -ge 1 ]] 
+then
+   mod=$1
+else
+   mod=125
+fi
+echo $mod
+log_dir="$HOME/scripts/logs"
+dt=`date "+%H%M"`
+logf="$log_dir/convc.log"
+errf="$log_dir/error.log"
+wrkf="$log_dir/work.log"
+tmpf="$log_dir/tmpf.log"
+touch $logf
+touch $errf
+touch $wrkf
+touch $tmpf
+
+main ()
+{
+  echo "" > $logf
+  local msg="NewProcess"
+  write_log "$msg"
+  stopwatch
+  start=$?
+  
+  echo "Uncompressing files"
+  uncompress_files  
+
+  echo "Finished uncompressing now processing comics"
+  for file in *
+  do 
+    fl=${file//\'/}
+    fl1=${fl// /_}
+    fl2=${fl1//_/-}
+    if [ -d "$fl2" ]; then
+      convert_comics "$file" "$fl2"
+    else 
+      mkdir $fl2
+      convert_comics "$file" "$fl2"
+    fi
+  done
+
+  log_time $start
+
+  local msg="EndProcess"
+  write_log "$msg"
+}
+
+
+function stopwatch ()
+{
+  # get time in seconds from system
+  # return seconds
+  rc=`date "+%s"`
+  return "$rc"
+}
+
+function log_time ()
+{
+  # calculate a process time difference and 
+  # store number of seconds it in the log
+
+  start=$1
+  stopwatch
+  end=$?
+  t=`expr $end - $start` 
+  rc=`printf "Elapsed process time %d seconds" $t`
+  write_log "$rc"
+}
+
+function write_log () 
+{
+  # One function that will write messages into the log files
+  # also will record time and any other important information as needed.
+  msg=$1
+  printf "Message -  %s\n" "$msg"
+  logtime=`date "+%m-%d-%Y:%H:%M:%S"`
+  printf "%s %s\n" $logtime "$msg" >> $logf
+}
+
+function convert_comics ()
+{
+  # main driver for converting the comics into 16 gray scale images
+  # and create a zip file
+
+  local msg="Convert Comics"
+  write_log "$msg"
+  local srcdir=$1
+  local wrkdir=$2
+  write_log "Working on dirs $srcdir and $wrkdir"
+  rc=0
+  stopwatch
+  start=$?
+  correct_files "$srcdir"
+  copy_files "$srcdir" "$wrkdir"
+  printf "$?\n"
+  convert_files "$wrkdir"
+  printf "$?\n"
+  msg=`printf "%d files took a total time "`
+  write_log "$msg"
+  log_time $start
+
+  msg="END comic convert"
+  write_log "$msg"
+}
+
+function correct_files ()
+{
+  #correct file names change JPG to jpg and convert tiff's to jpg's
+  local msg="Beginning file correction Process" 
+  write_log "$msg"
+  stopwatch
+  start=$?
+  # set source directory
+  local src=$1
+  write_log "Convert JPG"
+  # Search for JPG's if found move to jpg suffix
+  find "$src" -name "*.*" | grep -i jpg |  while read file
+  do
+    mv "$file" "${file%%.JPG}.jpg"
+  done &>$errf
+  cat $errf >> $logf
+  
+
+  write_log "Convert gif" 
+  # look for tiff files, if found convert to gif 
+  find "$src" -name "*.gif" | while read file
+  do
+    convert "$file" "${file%%.gif}.tiff"
+    rm "$file"
+  done&>$errf
+  cat $errf >> $logf
+  
+write_log "Convert tiff" 
+  # convert jpg to tiff files, 
+  find "$src" -name "*.jpg" | while read file
+  do
+    echo convert "$file" "${file%%.jpg}.tiff"
+    convert "$file" "${file%%.jpg}.tiff"
+    rm "$file"
+  done&>$errf
+  cat $errf >> $logf
+  
+  write_log "chmod tiff" 
+  find "$src" -name "*.tiff" -exec chmod +rw {} \; &>$errf
+  cat $errf >> $logf
+  
+  log_time $start 
+
+  msg="Finished file correction" 
+  write_log "$msg"
+  return 0
+}
+
+function copy_files ()
+{
+  # copy files from src to dest dirs
+  # this also creates a better file numbering scheme, 
+  # ordering the file 0 to number of files in directory
+  # also the destination directory has spaces removed from the name
+  # this makes refering to it much easier
+  src=$1
+  dst=$2
+  msg="Copying files from $src to $dst" 
+  write_log "$msg"
+  stopwatch
+  start=$?
+  cd "$src"
+
+  cnt=`ls | wc -l` 
+  msg=`printf "Directory \"%s\" contains %d files\n" "$src" $cnt`
+  write_log "$msg"
+
+  # start files at 0
+  let i=0
+  for file in *.tiff
+  do
+
+  # create file number.
+  num=`printf "%03d" $i`
+  let j=$i+1
+  printf "%03d: " $j
+  #echo cp "$file" ../$dst/Page-${num}.tiff >> $logf
+  cp -v "$file" ../$dst/Page-${num}.tiff 
+  let i=$i+1
+  done &> $errf
+  cat $errf >> $logf
+  cd ..
+  
+  log_time $start  
+
+  msg="Finished copy" 
+  write_log "$msg"
+}
+
+function convert_files ()
+{
+  # work horse of the script, we are now using imagemagick programs
+  # to convert the color images into 16 - gray scale images
+  # for the directory
+
+  wrkdir=$1
+  local msg="Converting $dst directory check work.log for status"
+  write_log "$msg"
+  stopwatch
+  start=$?
+  cd "$wrkdir"
+  ## copy title into workdir
+
+  ## find files in directory
+ 
+  for file in *.tiff
+  do
+    ## convert files to black and white while reducing the size of the image
+    echo "converting $file to ${file%*.tiff}-mono.tiff"
+    ## performing comverts to file, first to normalize the picture, this cleans
+    ## it up, then modulate it and gray scale it, this sets the brightness and
+    ## sets it up to be a gray scale picture.  set contrast this makes the
+    ## lines darker easier to read in a nook.
+    ## removing trim
+
+    echo "modulate grayscale"
+    convert -sharpen 0x3 -modulate $mod $file tmp.tiff
+    fl1=${file%*.tiff}-mono.tiff
+    convert -type grayscale tmp.tiff $fl1
+    cleanpic2 $fl1
+    rm "$file"
+    rm tmp.tiff
+    
+  done &> $wrkf
+  cat $wrkf >> $logf 
+
+  cd ..
+  
+  zip -r ${wrkdir}.zip $wrkdir 
+  
+  log_time $start
+  
+  msg="Finished convert"
+  write_log "$msg"
+  return 0
+}
+
+function unrar_files ()
+{
+  file="$1"
+  fl1=${file%%.cb*}
+  echo "Working on $fl1" > $wrkf
+  mkdir "$fl1" &>$tmpf
+  cat $tmpf >> $wrkf
+  cd "$fl1"
+  rar e -o+ "../$file" &>$tmpf
+  cat $tmpf >> $wrkf
+  cd ..
+  cat $wrkf >> $logf 
+}
+
+function unzip_files()
+{
+  file="$1"
+  echo "Working on $file" > $wrkf
+  fl1=${file%%.cb*}       #create directory to place files into
+  mkdir "$fl1" &> $tmpf
+  cat $tmpf >> $wrkf
+  cd "$fl1"               # go into that directory 
+  unzip -x -j "../$file" &> $tmpf # now unzip file from directory 
+  cat $tmpf >> $wrkf 
+  cat $wrkf >> $logf 
+  cd ..
+}
+
+function uncompress_files ()
+{
+ # Look in current directory and uncompress all cbr and cbz files
+ # creating a directory for all files
+  stopwatch 
+  start=$?
+  msg="Start uncompressing files"
+  write_log "$msg" 
+
+  # look for all cbr files if we have any then start compressing
+  ls *.*  | while read file
+  do
+    fl_stat=`file "$file"`
+    echo "$fl_stat" | grep -iq rar
+    if [ $? -eq 0 ]; then
+       echo "Uncompress"
+       unrar_files "$file"
+       rm "$file"
+    fi
+    echo "$fl_stat" | grep -iq zip 
+    if [ $? -eq 0 ]; then
+       echo "Unzip"
+       unzip_files "$file"
+       rm "$file"
+    fi
+  done
+
+  log_time $start
+
+  msg="Finished uncompressing files"
+  write_log "$msg"
+}
+
+main
